@@ -7,7 +7,7 @@ from datetime import datetime
 # ---------- 配置区 (你可以修改这里) ----------
 # 如果某个源不稳定，可以临时将其设置为 False
 ENABLE_BAIDU = True
-ENABLE_ZHIHU = True
+ENABLE_ZHIHU = False
 ENABLE_XHS = True  # 新增：小红书开关。如果抓取失败，可暂时设为 False 跳过。
 # ------------------------------------------
 
@@ -76,7 +76,7 @@ def fetch_xiaohongshu_search(keywords):
     """尝试从小红书网页版搜索页抓取（请注意Robots协议和法律风险）"""
     if not ENABLE_XHS:
         return []
-    print("🔍 正在尝试抓取小红书搜索...")
+    print("🔍 正在尝试抓取小红书搜索并解析内容...")
     results = []
     for kw in keywords:
         try:
@@ -92,14 +92,53 @@ def fetch_xiaohongshu_search(keywords):
             print(f"   小红书请求状态码: {resp.status_code}")  # 关键调试信息
             resp.raise_for_status()
             
-            # 初步检查：如果页面返回成功，则视为抓取步骤成功（内容解析是下一步）
+            #  ---- 核心升级：开始解析页面内容 ----
             if resp.status_code == 200:
-                # 简单判断关键词是否出现在返回的HTML中（可能是动态渲染的占位符）
-                if kw in resp.text:
-                    results.append(f"小红书搜索『{kw}』: 请求成功，发现关键词")
-                else:
-                    results.append(f"小红书搜索『{kw}』: 请求成功，但页面内容可能为动态加载")
+                import re
+                # 尝试一：在HTML中搜索可能的JSON数据块
+                json_pattern = re.compile(r'<script[^>]*>\s*window\.__INITIAL_STATE__\s*=\s*({.*?})\s*;</script>', re.DOTALL)
+                match = json_pattern.search(resp.text)
                 
+                if match:
+                    try:
+                        data = json.loads(match.group(1))
+                        # 提示：这里需要根据小红书实际数据结构来探索和提取
+                        # 你可以先打印一小部分数据结构看看（下一行代码）
+                        # print(json.dumps(data, indent=2, ensure_ascii=False)[:2000])
+                        
+                        # 尝试常见的笔记数据路径（这是猜测，可能需要调整）
+                        notes = data.get('searchResult', {}).get('notes', [])
+                        if not notes:
+                            # 尝试其他可能的路径
+                            notes = data.get('note', {}).get('noteList', [])
+                        
+                        if notes:
+                            for note in notes[:3]:  # 取前3条
+                                title = note.get('title', '无标题')
+                                # 有些标题在desc字段
+                                if not title or title == '无标题':
+                                    title = note.get('desc', '无描述')
+                                note_id = note.get('id', '')
+                                results.append(f"小红书笔记: {title} (ID: {note_id})")
+                            print(f"  成功从JSON数据中解析出 {len(notes)} 条笔记")
+                        else:
+                            results.append(f"小红书搜索『{kw}』: 页面含数据，但未找到笔记列表")
+                            print(f"  未在JSON中找到笔记列表，需要分析数据结构")
+                    except json.JSONDecodeError as e:
+                        print(f"  解析JSON失败: {e}")
+                        results.append(f"小红书搜索『{kw}』: 页面含JSON但格式异常")
+                else:
+                    # 尝试二：如果找不到JSON，尝试用简单规则提取可见文本（如笔记卡片标题）
+                    title_pattern = re.compile(r'"title":"([^"]+)"')
+                    found_titles = title_pattern.findall(resp.text)[:5]  # 取前5个
+                    for t in found_titles:
+                        if kw in t:
+                            results.append(f"小红书笔记: {t}")
+                    if found_titles:
+                        print(f"  通过正则匹配到 {len(found_titles)} 个标题片段")
+                    else:
+                        results.append(f"小红书搜索『{kw}』: 请求成功，但未解析出结构化内容")
+                    
         except Exception as e:
             # 更详细的错误输出，便于诊断
             print(f"⚠️ 抓取小红书关键词『{kw}』失败: {type(e).__name__} - {str(e)}")
