@@ -7,7 +7,7 @@ from datetime import datetime
 # ---------- 配置区 (你可以修改这里) ----------
 # 如果某个源不稳定，可以临时将其设置为 False
 ENABLE_BAIDU = True
-ENABLE_ZHIHU = False
+ENABLE_ZHIHU = True
 ENABLE_XHS = True  # 新增：小红书开关。如果抓取失败，可暂时设为 False 跳过。
 # ------------------------------------------
 
