@@ -3,7 +3,7 @@ on:
   workflow_dispatch: # 允许手动运行
   schedule:
     # 每天UTC时间0点（北京时间8点）和12点（北京时间20点）各运行一次
-    - cron: '0 0,12 * * *'
+    - cron: '0 * * * *'
 
 jobs:
   crawl:
