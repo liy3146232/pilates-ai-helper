@@ -156,10 +156,47 @@ def main():
         message += f"📊 监控词库: {len(all_kws)} 个\n"
         
     else:
-        message = f"📭【普拉提热点监控】{current_time}\n\n"
-        message += "⏳ 本次未在百度热搜前30名中发现直接关联热点。\n"
-        message += "建议：可适度增加更泛的'健康'、'运动'等场景词。\n\n"
-        message += f"📊 当前词库: {', '.join(all_kws[:5])}等 {len(all_kws)} 个词。"
+    # --- 路径三：无热点时，启动“日常创意生成” ---
+    message = f"💡【普拉提创意工坊】{current_time}\n\n"
+    message += "📌 今日热搜暂无直接关联，为你生成专属创作灵感：\n\n"
+    
+    # 普拉提内容创意库
+    content_ideas = [
+        {
+            "title": "经期舒缓普拉提序列",
+            "desc": "结合当下节气/节日，设计一套适合生理期的舒缓动作，强调缓解腹痛与情绪调理。",
+            "format": "图文教程 / 10分钟跟练视频"
+        },
+        {
+            "title": "办公室人群的『手机脖』自救指南",
+            "desc": "针对低头族，用毛巾或普拉提圈演示5个在办公椅上就能完成的微运动。",
+            "format": "短视频教程 / 小红书图文对比（Before-After）"
+        },
+        {
+            "title": "产后修复的三大认知误区",
+            "desc": "科普‘盆底肌’、‘腹直肌分离’的正确恢复思路，破除‘越快越好’等常见误区。",
+            "format": "科普长图文 / 与产科医生对谈视频"
+        },
+        {
+            "title": "一根弹力带打造美背",
+            "desc": "利用弹力带，设计一套针对圆肩驼背的家庭跟练方案，强调发力感和呼吸配合。",
+            "format": "多机位跟练视频 / 动作分解GIF图"
+        },
+        {
+            "title": "普拉提球の魔法：下背部深度放松",
+            "desc": "展示如何用普拉提球进行下背部放松，针对久坐导致的腰酸。",
+            "format": "ASMR风格放松视频 / 步骤详解图文"
+        }
+    ]
+    
+    import random
+    selected = random.choice(content_ideas)
+    
+    message += f"🎯 **灵感主题**：{selected['title']}\n\n"
+    message += f"📝 **内容角度**：{selected['desc']}\n\n"
+    message += f"🎬 **推荐形式**：{selected['format']}\n\n"
+    message += "---\n"
+    message += f"📊 本次扫描了 {len(all_kws)} 个关键词，未在热搜中命中。系统将持续监控。"
     
     print(f"\n📨 消息预览:\n{'-'*30}\n{message}\n{'-'*30}")
     
