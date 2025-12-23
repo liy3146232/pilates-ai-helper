@@ -70,18 +70,52 @@ def fetch_baidu_hot(core_kws, scene_kws):
         return []
 
 def ai_analyze_hotspot(hot_title, matched_keyword):
-    """调用AI分析热点，生成创作建议（模拟/真实）"""
-    # 如果你配置了真实的DEEPSEEK_API_KEY，可以取消下面注释使用真实API
-    # return call_deepseek_api(hot_title, matched_keyword)
+    """调用真实的DeepSeek AI分析热点，生成创作建议"""
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
     
-    # 模拟AI返回（即使没有API，也能看到效果）
-    suggestions = [
-        f"围绕『{hot_title}』，可以突出『{matched_keyword}』与都市白领时间碎片化的矛盾，标题示例：《工作再忙，5分钟{matched_keyword}跟练拯救你的颈椎》",
-        f"结合热点『{hot_title}』，从“网红动作安全解析”角度切入，标题示例：《全网爆火的{matched_keyword}动作，真的适合你吗？》",
-        f"将热点『{hot_title}』与“家庭场景”结合，标题示例：《宅家带娃也能做！3个亲子{matched_keyword}小游戏》"
-    ]
-    import random
-    return random.choice(suggestions)
+    # 检查是否配置了密钥
+    if not api_key:
+        print(f"    ⚠️ 未找到DEEPSEEK_API_KEY，将使用模拟AI。")
+        return f"（请配置API Key以获取真实AI分析）热点『{hot_title}』与『{matched_keyword}』相关。"
+    
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # 精心设计的提示词（Prompt），直接要求生成文案
+    prompt = f"""你是一家高端普拉提工作室的资深内容策划。请根据以下热点新闻和关键词，为我生成直接可用的内容创作建议。
+
+**热点新闻**：{hot_title}
+**关联关键词**：{matched_keyword}
+
+请严格按以下格式输出：
+1. **爆款标题**：生成一个适合小红书或抖音的、吸引眼球的标题。
+2. **内容核心**：用一句话点明视频或图文的核心要点。
+3. **脚本钩子**：提供一个视频前3秒能留住用户的“钩子”文案。
+
+要求：风格专业且亲切，面向25-40岁注重健康的都市女性。"""
+    
+    data = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 500,
+        "temperature": 0.7
+    }
+    
+    try:
+        print(f"    🤖 正在调用DeepSeek AI分析热点...")
+        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=15)
+        response.raise_for_status()  # 检查HTTP错误
+        result = response.json()
+        ai_response = result["choices"][0]["message"]["content"].strip()
+        return ai_response
+    except requests.exceptions.Timeout:
+        return "❌ AI分析请求超时，请检查网络。"
+    except Exception as e:
+        print(f"    ❌ AI分析调用失败: {e}")
+        return f"⚠️ AI分析暂时不可用。可手动结合热点『{hot_title}』与关键词『{matched_keyword}』进行创作。"
 
 # 真实调用DeepSeek API的函数（备用，有Key时启用）
 def call_deepseek_api(hot_title, keyword):
