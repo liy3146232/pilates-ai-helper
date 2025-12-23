@@ -1,152 +1,113 @@
 import os
-import sys
 import requests
 import json
+import re
 from datetime import datetime
 
-# ---------- 配置区 (你可以修改这里) ----------
-# 如果某个源不稳定，可以临时将其设置为 False
-ENABLE_BAIDU = True
-ENABLE_ZHIHU = True
-ENABLE_XHS = True  # 新增：小红书开关。如果抓取失败，可暂时设为 False 跳过。
-# ------------------------------------------
+# ---------- 配置区 ----------
+ENABLE_BAIDU = True   # 百度热搜，主力数据源
+ENABLE_ZHIHU = False  # 已关闭
+ENABLE_XHS = False    # 已关闭
+# 可选：配置你的AI服务（例如DeepSeek）
+# 访问 https://platform.deepseek.com/ 获取API Key， 然后在此填入
+# DEEPSEEK_API_KEY = "你的sk-xxx密钥"
+# 若暂无，AI部分将输出模拟建议
+# ---------------------------
 
 def load_keywords():
-    """从你的配置文件加载关键词"""
-    keywords = []
+    """加载关键词，并分离出核心词和长尾场景词"""
+    core_keywords = []
+    scene_keywords = []
     try:
         with open('config/frequency_words.txt', 'r', encoding='utf-8') as f:
-            keywords = [line.strip() for line in f if line.strip()]
-        print(f"✅ 已加载监控关键词: {keywords}")
+            all_lines = [line.strip() for line in f if line.strip()]
+        # 简单划分：前9个可能为你的核心业务词，后续为场景词
+        core_keywords = all_lines[:9]
+        scene_keywords = all_lines[9:]
+        print(f"✅ 已加载核心业务词: {core_keywords}")
+        print(f"✅ 已加载场景长尾词: {scene_keywords}")
+        return core_keywords, scene_keywords
     except Exception as e:
-        print(f"❌ 读取关键词文件失败，使用默认关键词。错误: {e}")
-        keywords = ["普拉提", "健身", "瑜伽", "体态矫正"]  # 默认备选
-    return keywords
+        print(f"❌ 读取关键词文件失败: {e}")
+        return ["普拉提", "健身"], ["锻炼", "健康"]
 
-def fetch_baidu_hot(keywords):
-    """从百度热搜榜抓取"""
+def fetch_baidu_hot(core_kws, scene_kws):
+    """从百度热搜榜抓取并匹配关键词，返回结构化结果"""
     if not ENABLE_BAIDU:
         return []
-    print("🔍 正在抓取百度热搜...")
+    print("🔍 正在精准抓取百度热搜榜...")
     try:
         url = "https://top.baidu.com/board?tab=realtime"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url, headers=headers, timeout=15)
         resp.raise_for_status()
+
+        # 优化的正则，更精准匹配热搜标题
+        # 匹配模式：捕获热搜项容器内的标题文本
+        pattern = re.compile(r'<div[^>]*class="[^"]*c-single-text-ellipsis[^"]*"[^>]*>([^<]+)</div>')
+        hot_titles = pattern.findall(resp.text)
         
-        # 简易查找：在实际热门标题文本附近匹配关键词
-        matched = []
-        for kw in keywords:
-            if kw in resp.text:
-                # 找到关键词，记录一个简单结果（实际开发应解析具体标题）
-                matched.append(f"在百度热搜中发现关键词『{kw}』")
-        # 限制返回数量，避免消息过长
-        return matched[:5]
+        # 去重并清理空白
+        hot_titles = list(dict.fromkeys([t.strip() for t in hot_titles if t.strip()]))
+        
+        matched_news = []
+        all_keywords = core_kws + scene_kws
+        for title in hot_titles[:30]:  # 检查前30个热搜
+            for kw in all_keywords:
+                if kw in title:
+                    matched_news.append({
+                        "title": title,
+                        "matched_keyword": kw,
+                        "is_core": kw in core_kws
+                    })
+                    break  # 匹配到一个关键词即止
+        
+        print(f"   共扫描 {len(hot_titles)} 条热搜，命中 {len(matched_news)} 条。")
+        return matched_news[:8]  # 最多返回8条
+        
     except Exception as e:
         print(f"⚠️ 抓取百度热搜失败: {e}")
         return []
 
-def fetch_zhihu_hot(keywords):
-    """从知乎热榜抓取（通过官方API）"""
-    if not ENABLE_ZHIHU:
-        return []
-    print("🔍 正在抓取知乎热榜...")
-    try:
-        url = "https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=50"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        
-        matched = []
-        for item in data.get('data', []):
-            title = item.get('target', {}).get('title', '')
-            for kw in keywords:
-                if kw in title:
-                    matched.append(f"知乎热榜: {title}")
-                    break  # 避免一个标题因含多个关键词重复添加
-        return matched[:5]
-    except Exception as e:
-        print(f"⚠️ 抓取知乎热榜失败: {e}")
-        return []
+def ai_analyze_hotspot(hot_title, matched_keyword):
+    """调用AI分析热点，生成创作建议（模拟/真实）"""
+    # 如果你配置了真实的DEEPSEEK_API_KEY，可以取消下面注释使用真实API
+    # return call_deepseek_api(hot_title, matched_keyword)
+    
+    # 模拟AI返回（即使没有API，也能看到效果）
+    suggestions = [
+        f"围绕『{hot_title}』，可以突出『{matched_keyword}』与都市白领时间碎片化的矛盾，标题示例：《工作再忙，5分钟{matched_keyword}跟练拯救你的颈椎》",
+        f"结合热点『{hot_title}』，从“网红动作安全解析”角度切入，标题示例：《全网爆火的{matched_keyword}动作，真的适合你吗？》",
+        f"将热点『{hot_title}』与“家庭场景”结合，标题示例：《宅家带娃也能做！3个亲子{matched_keyword}小游戏》"
+    ]
+    import random
+    return random.choice(suggestions)
 
-def fetch_xiaohongshu_search(keywords):
-    """尝试从小红书网页版搜索页抓取（请注意Robots协议和法律风险）"""
-    if not ENABLE_XHS:
-        return []
-    print("🔍 正在尝试抓取小红书搜索并解析内容...")
-    results = []
-    for kw in keywords:
-        try:
-            # 对关键词进行URL编码
-            search_url = f"https://www.xiaohongshu.com/search_result?keyword={requests.utils.quote(kw)}"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'zh-CN,zh;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-            }
-            resp = requests.get(search_url, headers=headers, timeout=15)
-            print(f"   小红书请求状态码: {resp.status_code}")  # 关键调试信息
-            resp.raise_for_status()
-            
-            #  ---- 核心升级：开始解析页面内容 ----
-            if resp.status_code == 200:
-                import re
-                # 尝试一：在HTML中搜索可能的JSON数据块
-                json_pattern = re.compile(r'<script[^>]*>\s*window\.__INITIAL_STATE__\s*=\s*({.*?})\s*;</script>', re.DOTALL)
-                match = json_pattern.search(resp.text)
-                
-                if match:
-                    try:
-                        data = json.loads(match.group(1))
-                        # 提示：这里需要根据小红书实际数据结构来探索和提取
-                        # 你可以先打印一小部分数据结构看看（下一行代码）
-                        # print(json.dumps(data, indent=2, ensure_ascii=False)[:2000])
-                        
-                        # 尝试常见的笔记数据路径（这是猜测，可能需要调整）
-                        notes = data.get('searchResult', {}).get('notes', [])
-                        if not notes:
-                            # 尝试其他可能的路径
-                            notes = data.get('note', {}).get('noteList', [])
-                        
-                        if notes:
-                            for note in notes[:3]:  # 取前3条
-                                title = note.get('title', '无标题')
-                                # 有些标题在desc字段
-                                if not title or title == '无标题':
-                                    title = note.get('desc', '无描述')
-                                note_id = note.get('id', '')
-                                results.append(f"小红书笔记: {title} (ID: {note_id})")
-                            print(f"  成功从JSON数据中解析出 {len(notes)} 条笔记")
-                        else:
-                            results.append(f"小红书搜索『{kw}』: 页面含数据，但未找到笔记列表")
-                            print(f"  未在JSON中找到笔记列表，需要分析数据结构")
-                    except json.JSONDecodeError as e:
-                        print(f"  解析JSON失败: {e}")
-                        results.append(f"小红书搜索『{kw}』: 页面含JSON但格式异常")
-                else:
-                    # 尝试二：如果找不到JSON，尝试用简单规则提取可见文本（如笔记卡片标题）
-                    title_pattern = re.compile(r'"title":"([^"]+)"')
-                    found_titles = title_pattern.findall(resp.text)[:5]  # 取前5个
-                    for t in found_titles:
-                        if kw in t:
-                            results.append(f"小红书笔记: {t}")
-                    if found_titles:
-                        print(f"  通过正则匹配到 {len(found_titles)} 个标题片段")
-                    else:
-                        results.append(f"小红书搜索『{kw}』: 请求成功，但未解析出结构化内容")
-                    
-        except Exception as e:
-            # 更详细的错误输出，便于诊断
-            print(f"⚠️ 抓取小红书关键词『{kw}』失败: {type(e).__name__} - {str(e)}")
-            continue
-    return results
+# 真实调用DeepSeek API的函数（备用，有Key时启用）
+def call_deepseek_api(hot_title, keyword):
+    api_key = os.environ.get("DEEPSEEK_API_KEY") # 或使用全局变量
+    if not api_key:
+        return "（请配置API Key以获取真实AI分析）"
+    url = "https://api.deepseek.com/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    prompt = f"你是一个资深普拉提内容策划。热点新闻是『{hot_title}』，关联关键词是『{keyword}』。请直接生成一个适合小红书或抖音的短视频文案标题，要求吸引人并突出专业性。只返回标题本身。"
+    data = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 200
+    }
+    try:
+        resp = requests.post(url, headers=headers, data=json.dumps(data), timeout=20)
+        result = resp.json()
+        return result["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        return f"AI分析调用失败: {e}"
 
 def send_to_feishu(message, webhook_url):
-    """发送消息到飞书机器人"""
+    """发送消息到飞书"""
     headers = {'Content-Type': 'application/json'}
     data = {"msg_type": "text", "content": {"text": message}}
     try:
@@ -158,51 +119,59 @@ def send_to_feishu(message, webhook_url):
 
 def main():
     print("\n" + "="*50)
-    print("🚀 普拉提热点监控系统 - 真实抓取版 (含小红书测试)")
+    print("🚀 普拉提热点监控系统 - AI分析版")
     print("="*50)
     
     # 1. 加载关键词
-    keywords = load_keywords()
-    if not keywords:
-        print("❌ 关键词列表为空，请检查 config/frequency_words.txt 文件。")
+    core_kws, scene_kws = load_keywords()
+    all_kws = core_kws + scene_kws
+    if not all_kws:
+        print("❌ 关键词列表为空。")
         return
     
-    # 2. 获取Webhook地址
-    webhook_url = os.environ.get('FEISHU_WEBHOOK_URL') or os.environ.get('DINGTALK_WEBHOOK_URL')
+    # 2. 获取Webhook
+    webhook_url = os.environ.get('FEISHU_WEBHOOK_URL')
     if not webhook_url:
-        print("❌ 未找到推送机器人配置！请检查 Secrets 设置。")
-        # 这里不退出，仍执行抓取，便于在日志中查看抓取结果
-        webhook_url = None
+        print("⚠️ 未找到飞书Webhook，将仅输出日志。")
     
-    # 3. 执行真实抓取
-    all_results = []
-    if ENABLE_BAIDU:
-        all_results.extend(fetch_baidu_hot(keywords))
-    if ENABLE_ZHIHU:
-        all_results.extend(fetch_zhihu_hot(keywords))
-    if ENABLE_XHS:  # 新增：调用小红书抓取
-        all_results.extend(fetch_xiaohongshu_search(keywords))
+    # 3. 执行抓取
+    hot_news = fetch_baidu_hot(core_kws, scene_kws)
     
     # 4. 生成推送消息
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if all_results:
-        message = f"🔥【普拉提热点监控】{current_time}\n\n✅ 今日发现 {len(all_results)} 条相关线索：\n"
-        message += "\n".join([f"• {item}" for item in all_results])
-        message += f"\n\n📊 监控关键词: {', '.join(keywords)}"
+    if hot_news:
+        # 按匹配关键词类型排序，核心词匹配的在前
+        hot_news.sort(key=lambda x: x['is_core'], reverse=True)
+        
+        message = f"🔥【普拉提热点监控】{current_time}\n\n"
+        message += f"✅ 发现 {len(hot_news)} 条相关热搜：\n\n"
+        
+        for i, news in enumerate(hot_news, 1):
+            ai_suggestion = ai_analyze_hotspot(news['title'], news['matched_keyword'])
+            tag = "💎" if news['is_core'] else "🔍"
+            message += f"{tag} {i}. {news['title']}\n"
+            message += f"  匹配词: {news['matched_keyword']}\n"
+            message += f"  💡 AI灵感: {ai_suggestion}\n\n"
+        
+        message += f"📊 监控词库: {len(all_kws)} 个\n"
+        
     else:
-        message = f"📭【普拉提热点监控】{current_time}\n\n⏳ 今日在监控范围内未发现相关线索。\n\n📊 监控关键词: {', '.join(keywords)}"
+        message = f"📭【普拉提热点监控】{current_time}\n\n"
+        message += "⏳ 本次未在百度热搜前30名中发现直接关联热点。\n"
+        message += "建议：可适度增加更泛的'健康'、'运动'等场景词。\n\n"
+        message += f"📊 当前词库: {', '.join(all_kws[:5])}等 {len(all_kws)} 个词。"
     
-    print(f"\n📨 生成消息体预览:\n{'-'*30}\n{message}\n{'-'*30}")
+    print(f"\n📨 消息预览:\n{'-'*30}\n{message}\n{'-'*30}")
     
-    # 5. 推送消息
+    # 5. 推送
     if webhook_url:
-        print("📤 正在推送消息到飞书/钉钉...")
+        print("📤 正在推送...")
         if send_to_feishu(message, webhook_url):
-            print("✅ 消息推送成功！")
+            print("✅ 推送成功！")
         else:
-            print("❌ 消息推送失败，请检查网络或Webhook地址。")
+            print("❌ 推送失败。")
     else:
-        print("⏭️ 未配置Webhook，本次运行仅完成抓取测试。")
+        print("⏭️ 未配置Webhook，运行结束。")
     
     print("="*50)
     print("🏁 本次监控任务执行完毕。")
